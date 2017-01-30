@@ -3,6 +3,7 @@ import unittest
 import vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
 import logging
+import numpy as np
 
 #
 # FaceRecognition
@@ -91,6 +92,33 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
 
+
+  def getVtkImageDataAsOpenCVMat(self):
+    cameraVolume = slicer.util.getNode('Image_Reference')
+    
+    image = vtk.vtkImageData()
+    image = cameraVolume.GetImageData()
+
+    caster = vtk.vtkImageCast()
+    caster.SetInputData(image)
+    caster.SetOutputScalarTypeToUnsignedChar()
+    caster.Update()
+
+    dims = image.GetDimensions()
+    matImage = np.zeros((dims[0], dims[1], dims[2]), dtype = 'uint8')
+
+    extractVOI = vtk.vtkExtractVOI()
+    extractVOI.SetInputData(caster.GetOutput())
+    extractVOI.SetVOI(0, dims[0], 0, dims[1], 0, dims[2])
+    extractVOI.Update()
+
+    for i in range(0, dims[0]):
+      for j in range(0, dims[1]):
+        out = extractVOI.GetOutput()
+        matImage[(i, j)] = out.GetScalarComponentAsDouble(i, j, 0, 1)
+
+    return matImage
+
   def run(self):
     """
     Run the actual algorithm
@@ -104,16 +132,16 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
       logging.debug('Could not load cascade file!')
       return 0
 
-    capture = cv2.VideoCapture(0)
+    #capture = cv2.VideoCapture(0)
 
     while True:
         # Capture frame-by-frame
-        ret, frame = capture.read()
+        frame = self.getVtkImageDataAsOpenCVMat()
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        #gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         faces = faceCascade.detectMultiScale(
-          gray,
+          frame,
           scaleFactor=1.1,
           minNeighbors=5,
           minSize=(30, 30)
@@ -121,16 +149,16 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
 
         # Draw a rectangle around the faces
         for (x, y, w, h) in faces:
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+          cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
 
         # Display the resulting frame
         cv2.imshow('Video', frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+          break
 
     # When everything is done, release the capture
-    capture.release()
+    #capture.release()
     cv2.destroyAllWindows()
 
 
