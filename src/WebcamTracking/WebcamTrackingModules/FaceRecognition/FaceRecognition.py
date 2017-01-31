@@ -92,32 +92,19 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
 
-
   def getVtkImageDataAsOpenCVMat(self):
     cameraVolume = slicer.util.getNode('Image_Reference')
     
-    image = vtk.vtkImageData()
     image = cameraVolume.GetImageData()
+    shape = list(cameraVolume.GetImageData().GetDimensions())
+    shape.reverse()
+    components = image.GetNumberOfScalarComponents()
+    if components > 1:
+      shape.append(components)
+      shape.remove(1)
+    imageMat = vtk.util.numpy_support.vtk_to_numpy(image.GetPointData().GetScalars()).reshape(shape)
 
-    caster = vtk.vtkImageCast()
-    caster.SetInputData(image)
-    caster.SetOutputScalarTypeToUnsignedChar()
-    caster.Update()
-
-    dims = image.GetDimensions()
-    matImage = np.zeros((dims[0], dims[1], dims[2]), dtype = 'uint8')
-
-    extractVOI = vtk.vtkExtractVOI()
-    extractVOI.SetInputData(caster.GetOutput())
-    extractVOI.SetVOI(0, dims[0], 0, dims[1], 0, dims[2])
-    extractVOI.Update()
-
-    for i in range(0, dims[0]):
-      for j in range(0, dims[1]):
-        out = extractVOI.GetOutput()
-        matImage[(i, j)] = out.GetScalarComponentAsDouble(i, j, 0, 1)
-
-    return matImage
+    return imageMat
 
   def run(self):
     """
@@ -132,16 +119,15 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
       logging.debug('Could not load cascade file!')
       return 0
 
-    #capture = cv2.VideoCapture(0)
-
     while True:
         # Capture frame-by-frame
         frame = self.getVtkImageDataAsOpenCVMat()
 
-        #gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # Convert to grayscale image.
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         faces = faceCascade.detectMultiScale(
-          frame,
+          gray,
           scaleFactor=1.1,
           minNeighbors=5,
           minSize=(30, 30)
@@ -158,7 +144,6 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
           break
 
     # When everything is done, release the capture
-    #capture.release()
     cv2.destroyAllWindows()
 
 
