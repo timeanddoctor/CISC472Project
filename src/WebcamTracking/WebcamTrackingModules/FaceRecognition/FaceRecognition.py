@@ -104,6 +104,9 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
       shape.remove(1)
     imageMat = vtk.util.numpy_support.vtk_to_numpy(image.GetPointData().GetScalars()).reshape(shape)
 
+    #imageMat = imageMat[::-1, ::-1, ::-1]
+
+
     return imageMat
 
   def run(self):
@@ -113,18 +116,26 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
     import cv2
 
     faceCascade = cv2.CascadeClassifier()
-    faceCascade.load('C:\\Users\\baum\\Documents\\GitHub\\CISC472Project\\src\\WebcamTracking\\WebcamTrackingModules\\FaceRecognition\\haarcascade_frontalface_default.xml')
-    
+    faceCascade.load('C:\\Users\\Zac Baum\\Documents\\GitHub\\CISC472Project\\src\\WebcamTracking\\WebcamTrackingModules\\FaceRecognition\\haarcascade_frontalface_default.xml')
+    #faceCascade.load('C:\\Users\\baum\\Documents\\GitHub\\CISC472Project\\src\\WebcamTracking\\WebcamTrackingModules\\FaceRecognition\\haarcascade_frontalface_default.xml')
+
     if faceCascade.empty():
       logging.debug('Could not load cascade file!')
       return 0
 
+    lastUpdateTimeSec = 0.0
+    minimumTimeBetweenUpdateSec = 0.0001
+
     while True:
+
+      currentTimeSec = vtk.vtkTimerLog.GetUniversalTime()
+      if currentTimeSec > lastUpdateTimeSec + minimumTimeBetweenUpdateSec:
+
         # Capture frame-by-frame
         frame = self.getVtkImageDataAsOpenCVMat()
 
         # Convert to grayscale image.
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(frame[::-1, ::-1, ::-1], cv2.COLOR_RGB2GRAY)
 
         faces = faceCascade.detectMultiScale(
           gray,
@@ -138,10 +149,11 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
           cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
 
         # Display the resulting frame
-        cv2.imshow('Video', frame)
+        #cv2.imshow('Video', frame[::-1, ::-1, ::-1])
+        lastUpdateTimeSec = currentTimeSec
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-          break
+      if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
 
     # When everything is done, release the capture
     cv2.destroyAllWindows()
