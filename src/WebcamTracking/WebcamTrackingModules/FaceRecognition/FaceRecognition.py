@@ -4,6 +4,7 @@ import vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
 import logging
 import numpy as np
+import cv2 as cv2
 
 #
 # FaceRecognition
@@ -92,9 +93,8 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
 
-  def getVtkImageDataAsOpenCVMat(self):
-    cameraVolume = slicer.util.getNode('Image_Reference')
-    
+  def getVtkImageDataAsOpenCVMat(self, volumeNodeName):
+    cameraVolume = slicer.util.getNode(volumeNodeName)
     image = cameraVolume.GetImageData()
     shape = list(cameraVolume.GetImageData().GetDimensions())
     shape.reverse()
@@ -103,60 +103,86 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
       shape.append(components)
       shape.remove(1)
     imageMat = vtk.util.numpy_support.vtk_to_numpy(image.GetPointData().GetScalars()).reshape(shape)
-
-    #imageMat = imageMat[::-1, ::-1, ::-1]
-
+    imageMat = imageMat[::-1, ::-1, ::-1]
+    imageMat = imageMat.copy()
 
     return imageMat
+
+
+  def getOpenCVMatAsVtkImageData(self, imageMat):
+    imageMat = np.rot90(imageMat,3)
+    imageMat = np.flipud(imageMat)
+    destinationArray = vtk.util.numpy_support.numpy_to_vtk(imageMat.transpose(2, 1, 0).ravel(), deep = True)
+    destinationImageData = vtk.vtkImageData()    
+    destinationImageData.SetDimensions(imageMat.shape)
+    destinationImageData.GetPointData().SetScalars(destinationArray)
+
+    return destinationImageData
+
+
+  def createWebcamPlusConnector(self):
+    webcamConnectorNode = slicer.util.getNode('WebcamPlusConnector')
+    if not webcamConnectorNode:
+      webcamConnectorNode = slicer.vtkMRMLIGTLConnectorNode()
+      webcamConnectorNode.SetLogErrorIfServerConnectionFailed(False)
+      webcamConnectorNode.SetName('WebcamPlusConnector')
+      slicer.mrmlScene.AddNode(webcamConnectorNode)
+      webcamConnectorNode.SetTypeClient('localhost', 18944)
+      logging.debug('Webcam PlusConnector Created')
+    webcamConnectorNode.Start()
+
+
+  def setupViewerImage(self):
+    self.destinationImageVolume = slicer.util.getNode('FaceRecognition_Image')
+    if self.destinationImageVolume == None:
+      self.destinationImageVolume = slicer.vtkMRMLScalarVolumeNode()
+      self.destinationImageVolume.SetName('FaceRecognition_Image')
+      self.destinationImageVolume.SetSpacing(0.2, 0.2, 0.2)
+      slicer.mrmlScene.AddNode(self.destinationImageVolume)
+
+
+  def doImageStuff(self, caller, eventid):
+    frame = self.getVtkImageDataAsOpenCVMat('Image_Reference')
+
+    # Convert to grayscale image.
+    gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+    faces = self.faceCascade.detectMultiScale(
+      gray,
+      scaleFactor = 1.1,
+      minNeighbors = 5,
+      minSize = (50, 50)
+    )
+
+    # Draw a rectangle around the faces
+    for (x, y, w, h) in faces:
+      cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+    destinationImageData = self.getOpenCVMatAsVtkImageData(frame)
+    self.destinationImageVolume.SetAndObserveImageData(destinationImageData)
+
 
   def run(self):
     """
     Run the actual algorithm
     """
-    import cv2
+    # Create PLUS Connector
+    self.createWebcamPlusConnector()
 
-    faceCascade = cv2.CascadeClassifier()
-    faceCascade.load('C:\\Users\\Zac Baum\\Documents\\GitHub\\CISC472Project\\src\\WebcamTracking\\WebcamTrackingModules\\FaceRecognition\\haarcascade_frontalface_default.xml')
-    #faceCascade.load('C:\\Users\\baum\\Documents\\GitHub\\CISC472Project\\src\\WebcamTracking\\WebcamTrackingModules\\FaceRecognition\\haarcascade_frontalface_default.xml')
+    # Create the image to be filled on updates.
+    self.setupViewerImage()
 
-    if faceCascade.empty():
-      logging.debug('Could not load cascade file!')
-      return 0
+    self.faceCascade = cv2.CascadeClassifier()
+    #faceCascade.load('C:\\Users\\Zac Baum\\Documents\\GitHub\\CISC472Project\\src\\WebcamTracking\\WebcamTrackingModules\\FaceRecognition\\haarcascade_frontalface_default.xml')
+    self.faceCascade.load('C:\\Users\\baum\\Documents\\GitHub\\CISC472Project\\src\\WebcamTracking\\WebcamTrackingModules\\FaceRecognition\\haarcascade_frontalface_default.xml')
 
-    lastUpdateTimeSec = 0.0
-    minimumTimeBetweenUpdateSec = 0.0001
+    self.webcamImageVolume = slicer.util.getNode('Image_Reference')
+    self.imageDataModifiedObserver = self.webcamImageVolume.AddObserver(slicer.vtkMRMLVolumeNode.ImageDataModifiedEvent, self.doImageStuff)
 
-    while True:
-
-      currentTimeSec = vtk.vtkTimerLog.GetUniversalTime()
-      if currentTimeSec > lastUpdateTimeSec + minimumTimeBetweenUpdateSec:
-
-        # Capture frame-by-frame
-        frame = self.getVtkImageDataAsOpenCVMat()
-
-        # Convert to grayscale image.
-        gray = cv2.cvtColor(frame[::-1, ::-1, ::-1], cv2.COLOR_RGB2GRAY)
-
-        faces = faceCascade.detectMultiScale(
-          gray,
-          scaleFactor=1.1,
-          minNeighbors=5,
-          minSize=(30, 30)
-        )
-
-        # Draw a rectangle around the faces
-        for (x, y, w, h) in faces:
-          cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-
-        # Display the resulting frame
-        #cv2.imshow('Video', frame[::-1, ::-1, ::-1])
-        lastUpdateTimeSec = currentTimeSec
-
-      if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-    # When everything is done, release the capture
-    cv2.destroyAllWindows()
+    # Set the destination image volume to the red slice background.
+    redWidget = slicer.app.layoutManager().sliceWidget('Red')
+    redWidget.setSliceOrientation('Reformat')
+    redWidget.sliceLogic().GetSliceCompositeNode().SetBackgroundVolumeID(self.destinationImageVolume.GetID())
+    redWidget.sliceLogic().FitSliceToAll()
 
 
 class FaceRecognitionTest(ScriptedLoadableModuleTest):
