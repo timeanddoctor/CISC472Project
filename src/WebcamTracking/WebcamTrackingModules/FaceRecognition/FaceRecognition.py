@@ -59,6 +59,14 @@ class FaceRecognitionWidget(ScriptedLoadableModuleWidget):
     self.applyButton.enabled = True
     parametersFormLayout.addRow(self.applyButton)
 
+    #
+    # Output Labels
+    #
+    self.objectFoundLabel = qt.QLabel("OBJECT FOUND: NONE")
+    parametersFormLayout.addRow(self.objectFoundLabel)
+    self.objectShapeLabel = qt.QLabel("OBJECT SHAPE: NONE")
+    parametersFormLayout.addRow(self.objectShapeLabel)
+
     # connections
     self.applyButton.connect('clicked(bool)', self.onApplyButton)
 
@@ -156,9 +164,29 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
     imgray = cv2.cvtColor(output, cv2.COLOR_RGB2GRAY)
     ret, thresh = cv2.threshold(imgray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
+
+    nonZero = np.ndarray.nonzero(thresh)
+    if nonZero is not np.array([]):
+      sigma = np.cov(nonZero)
+      if not np.isnan(sigma).any():
+        evals, evecs = np.linalg.eig(sigma)
+        sortedEvals = np.sort(evals)
+        lenRatio = sortedEvals[1] / sortedEvals[0]
+
+        self.widget.objectFoundLabel.setText("OBJECT FOUND: YES")
+        if lenRatio > 5:
+          self.widget.objectShapeLabel.setText("OBJECT SHAPE: LINEAR (" + str(int(sortedEvals[1])) + ' x ' + str(int(sortedEvals[0])) + ")")
+        else: 
+          self.widget.objectShapeLabel.setText("OBJECT SHAPE: SQUARE (" + str(int(sortedEvals[1])) + ' x ' + str(int(sortedEvals[0])) + ")")
+
+      else:
+        self.widget.objectFoundLabel.setText("OBJECT FOUND: NONE")
+        self.widget.objectShapeLabel.setText("OBJECT SHAPE: NONE")
+
+
     # Find the contours and draw them out to the to the original image.
     # The first contour fills the generated lines, second enhances the edges of the contour.
-    im2, contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+    im2, contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     cv2.drawContours(imData, contours, -1, (0, 255, 0), thickness = -1, maxLevel = 2)
     cv2.drawContours(imData, contours, -1, (0, 255, 0), thickness = 2, maxLevel = 2)
 
@@ -167,6 +195,7 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
     import cv2
 
     self.createWebcamPlusConnector()
+    self.widget = slicer.modules.FaceRecognitionWidget
 
     self.webcamImageVolume = slicer.util.getNode('Image_Reference')
     self.imageDataModifiedObserver = self.webcamImageVolume.AddObserver(slicer.vtkMRMLVolumeNode.ImageDataModifiedEvent, self.onWebcamImageModified)
