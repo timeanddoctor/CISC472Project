@@ -4,6 +4,7 @@ import vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
 import logging
 import numpy as np
+import colorsys
 
 #
 # FaceRecognition
@@ -53,6 +54,20 @@ class FaceRecognitionWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout = qt.QFormLayout(parametersCollapsibleButton)
 
     #
+    # Start Server / Launch Webcam Button
+    #
+    self.startWebcamButton = qt.QPushButton("Start Webcam")
+    self.startWebcamButton.enabled = True
+    parametersFormLayout.addRow(self.startWebcamButton)
+
+    #
+    # Start ColorPicker Button
+    #
+    self.pickColorButton = qt.QPushButton("Pick Object Color")
+    self.pickColorButton.enabled = True
+    parametersFormLayout.addRow(self.pickColorButton)
+
+    #
     # Apply Button
     #
     self.applyButton = qt.QPushButton("Go!")
@@ -62,12 +77,16 @@ class FaceRecognitionWidget(ScriptedLoadableModuleWidget):
     #
     # Output Labels
     #
+    self.objectColorLabel = qt.QLabel()
+    parametersFormLayout.addRow(self.objectColorLabel)
     self.objectFoundLabel = qt.QLabel("OBJECT FOUND: NONE")
     parametersFormLayout.addRow(self.objectFoundLabel)
     self.objectShapeLabel = qt.QLabel("OBJECT SHAPE: NONE")
     parametersFormLayout.addRow(self.objectShapeLabel)
 
     # connections
+    self.startWebcamButton.connect('clicked(bool)', self.onWebcamButton)
+    self.pickColorButton.connect('clicked(bool)', self.onPickColorButton)
     self.applyButton.connect('clicked(bool)', self.onApplyButton)
 
     # Add vertical spacer
@@ -87,6 +106,16 @@ class FaceRecognitionWidget(ScriptedLoadableModuleWidget):
   def onApplyButton(self):
     logic = FaceRecognitionLogic()
     logic.run()
+
+
+  def onWebcamButton(self):
+    logic = FaceRecognitionLogic()
+    logic.startWebcam()
+
+
+  def onPickColorButton(self):
+    logic = FaceRecognitionLogic()
+    logic.pickColor()
 
 #
 # FaceRecognitionLogic
@@ -147,13 +176,8 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
     # Get the vtkImageData as an np.array.
     imData = self.getVtkImageDataAsOpenCVMat('Image_Reference')
     
-    # Define the colour boundaries of the object you want to track.
-    boundaries = [([0, 35, 25], [50, 85, 75]),
-                  ([108, 187, 108], [158, 237, 250]),
-                  ([3, 80, 80], [43, 130, 130]),]
-
     # Go through each of the boundaries defined and combine the binary images with the original.
-    for (lower, upper) in boundaries:
+    for (lower, upper) in self.boundaries:
       lower = np.array(lower, dtype = 'uint8')
       upper = np.array(upper, dtype = 'uint8')
 
@@ -191,9 +215,7 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
     cv2.drawContours(imData, contours, -1, (0, 255, 0), thickness = 2, maxLevel = 2)
 
 
-  def run(self):
-    import cv2
-
+  def startWebcam(self):
     self.createWebcamPlusConnector()
     self.widget = slicer.modules.FaceRecognitionWidget
 
@@ -204,6 +226,23 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
     redWidget.setSliceOrientation('Axial')
     redWidget.sliceLogic().GetSliceCompositeNode().SetBackgroundVolumeID(self.webcamImageVolume.GetID())
     redWidget.sliceLogic().FitSliceToAll()
+
+
+  def pickColor(self):
+
+    return 0
+
+
+  def run(self):
+    import cv2
+
+    RGBColorValArray = colorsys.hsv_to_rgb(HSVColorArray[0] / 360.00, HSVColorArray[1] / 100.00, HSVColorArray[2] / 100.00)
+    self.RGBColorArray = [x * 255 for x in RGBColorValArray]
+
+    # Define the colour boundaries of the object you want to track.
+    self.boundaries = [([0, 35, 25], [50, 85, 75]),
+                  ([108, 187, 108], [158, 237, 250]),
+                  ([3, 80, 80], [43, 130, 130]),]
 
 
 class FaceRecognitionTest(ScriptedLoadableModuleTest):
