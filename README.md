@@ -12,10 +12,10 @@ Exact content can be found in the PerkTutorPrivate Assembla space, below are hig
 
 ### Closed Tickets:
 
-- Stream Webcam through PLUS into 3DSlicer
-- Combined existing PLUS configurations for EM trackinng with Webcam via two instances of a PLUS server
-- Use OpenCV to recognize known objects by pre-defined colour
-- Be able to recognize and determine the shape of given objects (square, or rectangular)
+- [Stream Webcam through PLUS into 3DSlicer](https://github.com/zacbaum/CISC472Project/commit/d3077fc318a2ee431f9a0da6402a2aed831ff827)
+- Combined existing PLUS configurations for EM trackinng with Webcam via two instances of a PLUS server (Commit found on PerkTutorPrivate)
+- [Use OpenCV to recognize known objects by pre-defined colour](https://github.com/zacbaum/CISC472Project/commit/5bafaf0bf0d0cf237690c5678651e66e32ac91b8)
+- [Be able to recognize and determine the shape of given objects (square, or rectangular)](https://github.com/zacbaum/CISC472Project/commit/4f02526996466cd7bc14f68b15b160046000324d)
 
 ### TODO:
 
