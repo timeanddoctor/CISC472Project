@@ -20,6 +20,7 @@ Exact content can be found in the PerkTutorPrivate Assembla space, below are hig
 ### TODO:
 
 - Create a method for object selection natively in the module
+- Add checkbox to show contours on object to verify color selection
 
 ## Helpful Links:
 [QT](http://doc.qt.io/qt-4.8/classes.html) - QT GUI code documentation.
