@@ -61,11 +61,16 @@ class FaceRecognitionWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout.addRow(self.startWebcamButton)
 
     #
-    # Start ColorPicker Button
+    # ColorPicker Buttons
     #
-    self.pickColorButton = qt.QPushButton("Pick Object Color")
-    self.pickColorButton.enabled = True
-    parametersFormLayout.addRow(self.pickColorButton)
+    self.startColorPickButton = qt.QPushButton("Show ROI")
+    self.startColorPickButton.enabled = True
+    self.colorPickButton = qt.QPushButton("Pick Object Color")
+    self.colorPickButton.enabled = True
+    hbox = qt.QHBoxLayout()
+    hbox.addWidget(self.startColorPickButton)
+    hbox.addWidget(self.colorPickButton)
+    parametersFormLayout.addRow(hbox)
 
     #
     # Apply Button
@@ -86,7 +91,8 @@ class FaceRecognitionWidget(ScriptedLoadableModuleWidget):
 
     # connections
     self.startWebcamButton.connect('clicked(bool)', self.onWebcamButton)
-    self.pickColorButton.connect('clicked(bool)', self.onPickColorButton)
+    self.startColorPickButton.connect('clicked(bool)', self.onStartColorPickButton)
+    self.colorPickButton.connect('clicked(bool)', self.onPickColorButton)
     self.applyButton.connect('clicked(bool)', self.onApplyButton)
 
     # Add vertical spacer
@@ -95,27 +101,30 @@ class FaceRecognitionWidget(ScriptedLoadableModuleWidget):
     # Refresh Apply button state
     self.onSelect()
 
+    self.logic = FaceRecognitionLogic()
+
   def cleanup(self):
     pass
 
 
   def onSelect(self):
-    self.applyButton.enabled = True
+    self.startWebcamButton.enabled = True
 
 
   def onApplyButton(self):
-    logic = FaceRecognitionLogic()
-    logic.run()
+    self.logic.run()
 
 
   def onWebcamButton(self):
-    logic = FaceRecognitionLogic()
-    logic.startWebcam()
+    self.logic.startWebcam()
 
 
   def onPickColorButton(self):
-    logic = FaceRecognitionLogic()
-    logic.pickColor()
+    self.logic.pickColor()
+
+
+  def onStartColorPickButton(self):
+    self.logic.startPickColor()
 
 #
 # FaceRecognitionLogic
@@ -188,7 +197,6 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
     imgray = cv2.cvtColor(output, cv2.COLOR_RGB2GRAY)
     ret, thresh = cv2.threshold(imgray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-
     nonZero = np.ndarray.nonzero(thresh)
     if nonZero is not np.array([]):
       sigma = np.cov(nonZero)
@@ -215,35 +223,86 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
     cv2.drawContours(imData, contours, -1, (0, 255, 0), thickness = 2, maxLevel = 2)
 
 
+  def onDrawBox(self, caller, eventid):
+    
+    import cv2
+    
+    # Get the vtkImageData as an np.array.
+    imData = self.getVtkImageDataAsOpenCVMat('Image_Reference')
+    self.x = imData.shape[1] / 2
+    self.y = imData.shape[0] / 2
+    self.w = 25
+    self.h = 25
+
+    cv2.rectangle(imData, (self.x - self.w, self.y - self.h), (self.x + self.w, self.y + self.h), (255, 0, 0), 1)
+
+
+  def getImageColorBoundaries(self):
+    import cv2
+    
+    # Get the vtkImageData as an np.array.
+    imData = self.getVtkImageDataAsOpenCVMat('Image_Reference')
+    valList = []
+
+    for i in xrange(self.x - self.w, self.x + self.w, 20):
+      for j in xrange(self.y - self.h, self.y + self.h, 20):
+
+        value = imData[i, j]
+        lower = [x - 20 if (x - 20) >= 0 else 0 for x in value]
+        upper = [x + 20 if (x + 20) <= 255 else 255 for x in value]
+        valList.append((lower, upper))
+
+    return valList
+    
+
   def startWebcam(self):
-    self.createWebcamPlusConnector()
-    self.widget = slicer.modules.FaceRecognitionWidget
 
     self.webcamImageVolume = slicer.util.getNode('Image_Reference')
-    self.imageDataModifiedObserver = self.webcamImageVolume.AddObserver(slicer.vtkMRMLVolumeNode.ImageDataModifiedEvent, self.onWebcamImageModified)
+    if not self.webcamImageVolume:
+      imageSpacing = [0.2, 0.2, 0.2]
+      imageData = vtk.vtkImageData()
+      imageData.SetDimensions(640, 480, 1)
+      imageData.AllocateScalars(vtk.VTK_UNSIGNED_CHAR, 1)
+      thresholder = vtk.vtkImageThreshold()
+      thresholder.SetInputData(imageData)
+      thresholder.SetInValue(0)
+      thresholder.SetOutValue(0)
+      # Create volume node
+      self.webcamImageVolume = slicer.vtkMRMLVectorVolumeNode()
+      self.webcamImageVolume.SetName('Image_Reference')
+      self.webcamImageVolume.SetSpacing(imageSpacing)
+      self.webcamImageVolume.SetImageDataConnection(thresholder.GetOutputPort())
+      # Add volume to scene
+      slicer.mrmlScene.AddNode(self.webcamImageVolume)
+      displayNode = slicer.vtkMRMLVectorVolumeDisplayNode()
+      slicer.mrmlScene.AddNode(displayNode)
+      self.webcamImageVolume.SetAndObserveDisplayNodeID(displayNode.GetID())
 
+    self.createWebcamPlusConnector()
     redWidget = slicer.app.layoutManager().sliceWidget('Red')
     redWidget.setSliceOrientation('Axial')
     redWidget.sliceLogic().GetSliceCompositeNode().SetBackgroundVolumeID(self.webcamImageVolume.GetID())
     redWidget.sliceLogic().FitSliceToAll()
+    self.boundaries = []
+
+
+  def startPickColor(self):
+    self.drawBoxObserver = self.webcamImageVolume.AddObserver(slicer.vtkMRMLVolumeNode.ImageDataModifiedEvent, self.onDrawBox)
 
 
   def pickColor(self):
-
-    return 0
+    self.widget = slicer.modules.FaceRecognitionWidget
+    self.webcamImageVolume.RemoveObserver(self.drawBoxObserver)
+    self.boundaries = self.getImageColorBoundaries()
+    self.widget.objectColorLabel.setStyleSheet("QLabel { background-color: #%02x%02x%02x; }" % tuple([x + 20 for x in self.boundaries[0][0]]))
 
 
   def run(self):
     import cv2
-
-    RGBColorValArray = colorsys.hsv_to_rgb(HSVColorArray[0] / 360.00, HSVColorArray[1] / 100.00, HSVColorArray[2] / 100.00)
-    self.RGBColorArray = [x * 255 for x in RGBColorValArray]
-
-    # Define the colour boundaries of the object you want to track.
-    self.boundaries = [([0, 35, 25], [50, 85, 75]),
-                  ([108, 187, 108], [158, 237, 250]),
-                  ([3, 80, 80], [43, 130, 130]),]
-
+    self.widget = slicer.modules.FaceRecognitionWidget
+    self.webcamImageVolume = slicer.util.getNode('Image_Reference')
+    self.imageDataModifiedObserver = self.webcamImageVolume.AddObserver(slicer.vtkMRMLVolumeNode.ImageDataModifiedEvent, self.onWebcamImageModified)
+    
 
 class FaceRecognitionTest(ScriptedLoadableModuleTest):
   """
