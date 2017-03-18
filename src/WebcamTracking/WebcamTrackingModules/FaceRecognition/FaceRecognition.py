@@ -75,25 +75,36 @@ class FaceRecognitionWidget(ScriptedLoadableModuleWidget):
     #
     # Apply Button
     #
-    self.applyButton = qt.QPushButton("Go!")
-    self.applyButton.enabled = True
-    parametersFormLayout.addRow(self.applyButton)
+    self.startButton = qt.QPushButton("Start")
+    self.startButton.enabled = True
+    self.stopButton = qt.QPushButton("Stop")
+    self.stopButton.enabled = True
+    hbox = qt.QHBoxLayout()
+    hbox.addWidget(self.startButton)
+    hbox.addWidget(self.stopButton)
+    parametersFormLayout.addRow(hbox)
 
     #
-    # Output Labels
+    # Output Table
     #
-    self.objectColorLabel = qt.QLabel()
-    parametersFormLayout.addRow(self.objectColorLabel)
-    self.objectFoundLabel = qt.QLabel("OBJECT FOUND: NONE")
-    parametersFormLayout.addRow(self.objectFoundLabel)
-    self.objectShapeLabel = qt.QLabel("OBJECT SHAPE: NONE")
-    parametersFormLayout.addRow(self.objectShapeLabel)
+    parametersFormLayout.addRow(qt.QLabel(''))
+    parametersFormLayout.addRow(qt.QLabel('Tracked Objects'))
+    self.objectsTable = qt.QTableWidget()
+    self.objectsTable.setRowCount(0)
+    self.objectsTable.setColumnCount(4)
+    self.objectsTable.setSizePolicy(qt.QSizePolicy(qt.QSizePolicy.Expanding, qt.QSizePolicy.Expanding))
+    self.objectsTable.horizontalHeader().setResizeMode(0, qt.QHeaderView.Stretch)
+    self.objectsTable.horizontalHeader().setResizeMode(1, qt.QHeaderView.Fixed)
+    self.objectsTable.horizontalHeader().resizeSection(1, 100)
+    self.objectsTable.setHorizontalHeaderLabels(["Object Name","Found", "Shape", "Color"])
+    parametersFormLayout.addRow(self.objectsTable)
 
     # connections
     self.startWebcamButton.connect('clicked(bool)', self.onWebcamButton)
     self.startColorPickButton.connect('clicked(bool)', self.onStartColorPickButton)
     self.colorPickButton.connect('clicked(bool)', self.onPickColorButton)
-    self.applyButton.connect('clicked(bool)', self.onApplyButton)
+    self.startButton.connect('clicked(bool)', self.onStartButton)
+    self.stopButton.connect('clicked(bool)', self.onStopButton)
 
     # Add vertical spacer
     self.layout.addStretch(1)
@@ -111,8 +122,12 @@ class FaceRecognitionWidget(ScriptedLoadableModuleWidget):
     self.startWebcamButton.enabled = True
 
 
-  def onApplyButton(self):
+  def onStartButton(self):
     self.logic.run()
+
+
+  def onStopButton(self):
+    self.logic.stop()
 
 
   def onWebcamButton(self):
@@ -139,6 +154,8 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
   Uses ScriptedLoadableModuleLogic base class, available at:
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
+  trackedObjectDict = {}
+  numberOfTrackedObjects = 0
 
   def getVtkImageDataAsOpenCVMat(self, volumeNodeName):
     cameraVolume = slicer.util.getNode(volumeNodeName)
@@ -179,52 +196,53 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
 
 
   def onWebcamImageModified(self, caller, eventid):
-    
     import cv2
     
     # Get the vtkImageData as an np.array.
     imData = self.getVtkImageDataAsOpenCVMat('Image_Reference')
     
-    # Go through each of the boundaries defined and combine the binary images with the original.
-    for (lower, upper) in self.boundaries:
-      lower = np.array(lower, dtype = 'uint8')
-      upper = np.array(upper, dtype = 'uint8')
+    for trackedObjectNumber in range(self.numberOfTrackedObjects):
+      trackedObject = self.trackedObjectDict[trackedObjectNumber]
 
-      mask = cv2.inRange(imData, lower, upper)
-      output = cv2.bitwise_and(imData, imData, mask = mask)
+      # Go through each of the boundaries defined and combine the binary images with the original.
+      for (lower, upper) in trackedObject.boundaries:
+        lower = np.array(lower, dtype = 'uint8')
+        upper = np.array(upper, dtype = 'uint8')
 
-    # Make everything monochrome and threshold
-    imgray = cv2.cvtColor(output, cv2.COLOR_RGB2GRAY)
-    ret, thresh = cv2.threshold(imgray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        mask = cv2.inRange(imData, lower, upper)
+        output = cv2.bitwise_and(imData, imData, mask = mask)
 
-    nonZero = np.ndarray.nonzero(thresh)
-    if nonZero is not np.array([]):
-      sigma = np.cov(nonZero)
-      if not np.isnan(sigma).any():
-        evals, evecs = np.linalg.eig(sigma)
-        sortedEvals = np.sort(evals)
-        lenRatio = sortedEvals[1] / sortedEvals[0]
+      # Make everything monochrome and threshold
+      imgray = cv2.cvtColor(output, cv2.COLOR_RGB2GRAY)
+      ret, thresh = cv2.threshold(imgray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        self.widget.objectFoundLabel.setText("OBJECT FOUND: YES")
-        if lenRatio > 5:
-          self.widget.objectShapeLabel.setText("OBJECT SHAPE: LINEAR (" + str(int(sortedEvals[1])) + ' x ' + str(int(sortedEvals[0])) + ")")
-        else: 
-          self.widget.objectShapeLabel.setText("OBJECT SHAPE: SQUARE (" + str(int(sortedEvals[1])) + ' x ' + str(int(sortedEvals[0])) + ")")
+      nonZero = np.ndarray.nonzero(thresh)
+      if nonZero is not np.array([]):
+        sigma = np.cov(nonZero)
+        if not np.isnan(sigma).any():
+          evals, evecs = np.linalg.eig(sigma)
+          sortedEvals = np.sort(evals)
+          lenRatio = sortedEvals[1] / sortedEvals[0]
 
-      else:
-        self.widget.objectFoundLabel.setText("OBJECT FOUND: NONE")
-        self.widget.objectShapeLabel.setText("OBJECT SHAPE: NONE")
+          trackedObject.found = "YES"
+          if lenRatio > 5:
+            trackedObject.shape = 'LINEAR'
+          else: 
+            trackedObject.shape = 'SQUARE'
+        else:
+          trackedObject.found = "NO"
+          trackedObject.shape = 'NONE'
 
+      # Find the contours and draw them out to the to the original image.
+      # The first contour fills the generated lines, second enhances the edges of the contour.
+      im2, contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+      cv2.drawContours(imData, contours, -1, trackedObject.color, thickness = -1, maxLevel = 2)
+      cv2.drawContours(imData, contours, -1, trackedObject.color, thickness = 2, maxLevel = 2)
 
-    # Find the contours and draw them out to the to the original image.
-    # The first contour fills the generated lines, second enhances the edges of the contour.
-    im2, contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    cv2.drawContours(imData, contours, -1, (0, 255, 0), thickness = -1, maxLevel = 2)
-    cv2.drawContours(imData, contours, -1, (0, 255, 0), thickness = 2, maxLevel = 2)
+      self.updateTrackedObjectsTable(trackedObject, trackedObjectNumber)
 
 
   def onDrawBox(self, caller, eventid):
-    
     import cv2
     
     # Get the vtkImageData as an np.array.
@@ -234,7 +252,7 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
     self.w = 25
     self.h = 25
 
-    cv2.rectangle(imData, (self.x - self.w, self.y - self.h), (self.x + self.w, self.y + self.h), (255, 0, 0), 1)
+    cv2.rectangle(imData, (self.x - self.w, self.y - self.h), (self.x + self.w, self.y + self.h), (255, 0, 0), 2)
 
 
   def getImageColorBoundaries(self):
@@ -244,8 +262,8 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
     imData = self.getVtkImageDataAsOpenCVMat('Image_Reference')
     valList = []
 
-    for i in xrange(self.x - self.w, self.x + self.w, 20):
-      for j in xrange(self.y - self.h, self.y + self.h, 20):
+    for i in xrange(self.x - self.w, self.x + self.w, 25):
+      for j in xrange(self.y - self.h, self.y + self.h, 25):
 
         value = imData[i, j]
         lower = [x - 20 if (x - 20) >= 0 else 0 for x in value]
@@ -256,7 +274,6 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
     
 
   def startWebcam(self):
-
     self.webcamImageVolume = slicer.util.getNode('Image_Reference')
     if not self.webcamImageVolume:
       imageSpacing = [0.2, 0.2, 0.2]
@@ -283,18 +300,36 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
     redWidget.setSliceOrientation('Axial')
     redWidget.sliceLogic().GetSliceCompositeNode().SetBackgroundVolumeID(self.webcamImageVolume.GetID())
     redWidget.sliceLogic().FitSliceToAll()
-    self.boundaries = []
 
 
   def startPickColor(self):
     self.drawBoxObserver = self.webcamImageVolume.AddObserver(slicer.vtkMRMLVolumeNode.ImageDataModifiedEvent, self.onDrawBox)
 
 
+  def addTrackedObjectToTable(self, trackedObject):
+    self.widget.objectsTable.setRowCount(self.numberOfTrackedObjects + 1)
+    self.widget.objectsTable.setItem(self.numberOfTrackedObjects, 0, qt.QTableWidgetItem('TrackedObject_' + str(self.numberOfTrackedObjects + 1)))
+    self.widget.objectsTable.setItem(self.numberOfTrackedObjects, 1, qt.QTableWidgetItem(trackedObject.found))
+    self.widget.objectsTable.setItem(self.numberOfTrackedObjects, 2, qt.QTableWidgetItem(trackedObject.shape))
+    self.widget.objectsTable.setItem(self.numberOfTrackedObjects, 3, qt.QTableWidgetItem(''))
+    self.widget.objectsTable.item(self.numberOfTrackedObjects, 3).setBackground(qt.QColor(trackedObject.color[0], trackedObject.color[1], trackedObject.color[2]))
+
+
+  def updateTrackedObjectsTable(self, trackedObject, objectNumber):
+    self.widget.objectsTable.setItem(objectNumber, 1, qt.QTableWidgetItem(trackedObject.found))
+    self.widget.objectsTable.setItem(objectNumber, 2, qt.QTableWidgetItem(trackedObject.shape))
+
+
   def pickColor(self):
     self.widget = slicer.modules.FaceRecognitionWidget
     self.webcamImageVolume.RemoveObserver(self.drawBoxObserver)
+    
+    trackedObject = TrackedObject(self.getImageColorBoundaries())
+    self.addTrackedObjectToTable(trackedObject)
+    self.trackedObjectDict[self.numberOfTrackedObjects] = trackedObject
+    self.numberOfTrackedObjects += 1
+
     self.boundaries = self.getImageColorBoundaries()
-    self.widget.objectColorLabel.setStyleSheet("QLabel { background-color: #%02x%02x%02x; }" % tuple([x + 20 for x in self.boundaries[0][0]]))
 
 
   def run(self):
@@ -303,6 +338,10 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
     self.webcamImageVolume = slicer.util.getNode('Image_Reference')
     self.imageDataModifiedObserver = self.webcamImageVolume.AddObserver(slicer.vtkMRMLVolumeNode.ImageDataModifiedEvent, self.onWebcamImageModified)
     
+
+  def stop(self):
+    self.webcamImageVolume.RemoveObserver(self.imageDataModifiedObserver)    
+
 
 class FaceRecognitionTest(ScriptedLoadableModuleTest):
   """
@@ -326,3 +365,14 @@ class FaceRecognitionTest(ScriptedLoadableModuleTest):
 
   def test_FaceRecognition1(self):
     return 1
+
+
+class TrackedObject:
+
+  def __init__(self, boundaries):
+    self.boundaries = boundaries
+    self.found = 'NO'
+    self.shape = 'NONE'
+    self.color = (self.boundaries[0][0][0] + 20,
+                  self.boundaries[0][0][1] + 20,
+                  self.boundaries[0][0][2] + 20)
