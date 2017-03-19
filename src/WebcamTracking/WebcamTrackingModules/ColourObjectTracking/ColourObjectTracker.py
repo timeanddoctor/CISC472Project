@@ -7,22 +7,22 @@ import numpy as np
 import colorsys
 
 #
-# FaceRecognition
+# ColourObjectTracker
 #
 
-class FaceRecognition(ScriptedLoadableModule):
+class ColourObjectTracker(ScriptedLoadableModule):
   """Uses ScriptedLoadableModule base class, available at:
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
 
   def __init__(self, parent):
     ScriptedLoadableModule.__init__(self, parent)
-    self.parent.title = "FaceRecognition" # TODO make this more human readable by adding spaces
+    self.parent.title = "Colour Object Tracker" # TODO make this more human readable by adding spaces
     self.parent.categories = ["Examples"]
     self.parent.dependencies = []
     self.parent.contributors = ["Zachary Baum (PerkLab)"] # replace with "Firstname Lastname (Organization)"
     self.parent.helpText = """
-    Scripted module to use webcam for facial recognition.
+    Scripted module to use webcam for tracking coloured objects.
     """
     self.parent.acknowledgementText = """
     This file was originally developed by Jean-Christophe Fillion-Robin, Kitware Inc.
@@ -30,10 +30,10 @@ class FaceRecognition(ScriptedLoadableModule):
 """ # replace with organization, grant and thanks.
 
 #
-# FaceRecognitionWidget
+# ColourObjectTrackerWidget
 #
 
-class FaceRecognitionWidget(ScriptedLoadableModuleWidget):
+class ColourObjectTrackerWidget(ScriptedLoadableModuleWidget):
   """Uses ScriptedLoadableModuleWidget base class, available at:
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
@@ -112,7 +112,7 @@ class FaceRecognitionWidget(ScriptedLoadableModuleWidget):
     # Refresh Apply button state
     self.onSelect()
 
-    self.logic = FaceRecognitionLogic()
+    self.logic = ColourObjectTrackerLogic()
 
   def cleanup(self):
     pass
@@ -142,10 +142,10 @@ class FaceRecognitionWidget(ScriptedLoadableModuleWidget):
     self.logic.startPickColor()
 
 #
-# FaceRecognitionLogic
+# ColourObjectTrackerLogic
 #
 
-class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
+class ColourObjectTrackerLogic(ScriptedLoadableModuleLogic):
   """This class should implement all the actual
   computation done by your module.  The interface
   should be such that other python code can import
@@ -321,7 +321,7 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
 
 
   def pickColor(self):
-    self.widget = slicer.modules.FaceRecognitionWidget
+    self.widget = slicer.modules.ColourObjectTrackerWidget
     self.webcamImageVolume.RemoveObserver(self.drawBoxObserver)
     
     trackedObject = TrackedObject(self.getImageColorBoundaries())
@@ -334,7 +334,7 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
 
   def run(self):
     import cv2
-    self.widget = slicer.modules.FaceRecognitionWidget
+    self.widget = slicer.modules.ColourObjectTrackerWidget
     self.webcamImageVolume = slicer.util.getNode('Image_Reference')
     self.imageDataModifiedObserver = self.webcamImageVolume.AddObserver(slicer.vtkMRMLVolumeNode.ImageDataModifiedEvent, self.onWebcamImageModified)
     
@@ -343,7 +343,7 @@ class FaceRecognitionLogic(ScriptedLoadableModuleLogic):
     self.webcamImageVolume.RemoveObserver(self.imageDataModifiedObserver)    
 
 
-class FaceRecognitionTest(ScriptedLoadableModuleTest):
+class ColourObjectTrackerTest(ScriptedLoadableModuleTest):
   """
   This is the test case for your scripted module.
   Uses ScriptedLoadableModuleTest base class, available at:
@@ -360,10 +360,10 @@ class FaceRecognitionTest(ScriptedLoadableModuleTest):
     """Run as few or as many tests as needed here.
     """
     self.setUp()
-    self.test_FaceRecognition1()
+    self.test_ColourObjectTracker1()
 
 
-  def test_FaceRecognition1(self):
+  def test_ColourObjectTracker1(self):
     return 1
 
 
