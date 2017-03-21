@@ -4,16 +4,14 @@ import vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
 import logging
 import numpy as np
-import colorsys
+from functools import partial
+
 
 #
 # ColourObjectTracker
 #
 
 class ColourObjectTracker(ScriptedLoadableModule):
-  """Uses ScriptedLoadableModule base class, available at:
-  https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
-  """
 
   def __init__(self, parent):
     ScriptedLoadableModule.__init__(self, parent)
@@ -34,9 +32,6 @@ class ColourObjectTracker(ScriptedLoadableModule):
 #
 
 class ColourObjectTrackerWidget(ScriptedLoadableModuleWidget):
-  """Uses ScriptedLoadableModuleWidget base class, available at:
-  https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
-  """
 
   def setup(self):
     ScriptedLoadableModuleWidget.setup(self)
@@ -91,12 +86,12 @@ class ColourObjectTrackerWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout.addRow(qt.QLabel('Tracked Objects'))
     self.objectsTable = qt.QTableWidget()
     self.objectsTable.setRowCount(0)
-    self.objectsTable.setColumnCount(4)
+    self.objectsTable.setColumnCount(5)
     self.objectsTable.setSizePolicy(qt.QSizePolicy(qt.QSizePolicy.Expanding, qt.QSizePolicy.Expanding))
     self.objectsTable.horizontalHeader().setResizeMode(0, qt.QHeaderView.Stretch)
     self.objectsTable.horizontalHeader().setResizeMode(1, qt.QHeaderView.Fixed)
     self.objectsTable.horizontalHeader().resizeSection(1, 100)
-    self.objectsTable.setHorizontalHeaderLabels(["Object Name","Found", "Shape", "Color"])
+    self.objectsTable.setHorizontalHeaderLabels(["Object Name","Found", "Shape", "Color", "Delete"])
     parametersFormLayout.addRow(self.objectsTable)
 
     # connections
@@ -146,16 +141,10 @@ class ColourObjectTrackerWidget(ScriptedLoadableModuleWidget):
 #
 
 class ColourObjectTrackerLogic(ScriptedLoadableModuleLogic):
-  """This class should implement all the actual
-  computation done by your module.  The interface
-  should be such that other python code can import
-  this class and make use of the functionality without
-  requiring an instance of the Widget.
-  Uses ScriptedLoadableModuleLogic base class, available at:
-  https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
-  """
+
   trackedObjectDict = {}
   numberOfTrackedObjects = 0
+  currentTrackedObjects = 0
 
   def getVtkImageDataAsOpenCVMat(self, volumeNodeName):
     cameraVolume = slicer.util.getNode(volumeNodeName)
@@ -236,10 +225,14 @@ class ColourObjectTrackerLogic(ScriptedLoadableModuleLogic):
       # Find the contours and draw them out to the to the original image.
       # The first contour fills the generated lines, second enhances the edges of the contour.
       im2, contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-      cv2.drawContours(imData, contours, -1, trackedObject.color, thickness = -1, maxLevel = 2)
-      cv2.drawContours(imData, contours, -1, trackedObject.color, thickness = 2, maxLevel = 2)
 
-      self.updateTrackedObjectsTable(trackedObject, trackedObjectNumber)
+      contourColor = (255 - trackedObject.color[0],
+                      255 - trackedObject.color[1],
+                      255 - trackedObject.color[2])
+      cv2.drawContours(imData, contours, -1, contourColor, thickness = -1, maxLevel = 2)
+      cv2.drawContours(imData, contours, -1, contourColor, thickness = 2, maxLevel = 2)
+
+      self.updateTrackedObjectInTable(trackedObject, trackedObjectNumber)
 
 
   def onDrawBox(self, caller, eventid):
@@ -261,14 +254,28 @@ class ColourObjectTrackerLogic(ScriptedLoadableModuleLogic):
     # Get the vtkImageData as an np.array.
     imData = self.getVtkImageDataAsOpenCVMat('Image_Reference')
     valList = []
+    red = 0
+    blue = 0
+    green = 0
+    numPx = 0
 
-    for i in xrange(self.x - self.w, self.x + self.w, 25):
-      for j in xrange(self.y - self.h, self.y + self.h, 25):
+    for i in xrange(self.x - self.w, self.x + self.w, 10):
+      for j in xrange(self.y - self.h, self.y + self.h, 10):
 
         value = imData[i, j]
-        lower = [x - 20 if (x - 20) >= 0 else 0 for x in value]
-        upper = [x + 20 if (x + 20) <= 255 else 255 for x in value]
-        valList.append((lower, upper))
+        #lower = [x - 20 if (x - 20) >= 0 else 0 for x in value]
+        #upper = [x + 20 if (x + 20) <= 255 else 255 for x in value]
+        #valList.append((lower, upper))
+
+        red += value[0]
+        green += value[1]
+        blue += value[2]
+        numPx += 1
+
+    avgValue = [red/numPx, green/numPx, blue/numPx]
+    lower = [x - 20 if (x - 20) >= 0 else 0 for x in avgValue]
+    upper = [x + 20 if (x + 20) <= 255 else 255 for x in avgValue]
+    valList = [(lower, upper)]
 
     return valList
     
@@ -306,28 +313,49 @@ class ColourObjectTrackerLogic(ScriptedLoadableModuleLogic):
     self.drawBoxObserver = self.webcamImageVolume.AddObserver(slicer.vtkMRMLVolumeNode.ImageDataModifiedEvent, self.onDrawBox)
 
 
-  def addTrackedObjectToTable(self, trackedObject):
-    self.widget.objectsTable.setRowCount(self.numberOfTrackedObjects + 1)
-    self.widget.objectsTable.setItem(self.numberOfTrackedObjects, 0, qt.QTableWidgetItem('TrackedObject_' + str(self.numberOfTrackedObjects + 1)))
-    self.widget.objectsTable.setItem(self.numberOfTrackedObjects, 1, qt.QTableWidgetItem(trackedObject.found))
-    self.widget.objectsTable.setItem(self.numberOfTrackedObjects, 2, qt.QTableWidgetItem(trackedObject.shape))
-    self.widget.objectsTable.setItem(self.numberOfTrackedObjects, 3, qt.QTableWidgetItem(''))
-    self.widget.objectsTable.item(self.numberOfTrackedObjects, 3).setBackground(qt.QColor(trackedObject.color[0], trackedObject.color[1], trackedObject.color[2]))
+  def addTrackedObjectToTable(self, trackedObject, row):
+    self.widget.objectsTable.setRowCount(row + 1)
+    self.widget.objectsTable.setItem(row, 0, qt.QTableWidgetItem(trackedObject.name))
+    self.widget.objectsTable.setItem(row, 1, qt.QTableWidgetItem(trackedObject.found))
+    self.widget.objectsTable.setItem(row, 2, qt.QTableWidgetItem(trackedObject.shape))
+    self.widget.objectsTable.setItem(row, 3, qt.QTableWidgetItem(''))
+    self.widget.objectsTable.item(row, 3).setBackground(qt.QColor(trackedObject.color[0], trackedObject.color[1], trackedObject.color[2]))
+    deleteObjectTableButton = qt.QPushButton()
+    deleteObjectTableButton.setIcon(qt.QIcon(":/Icons/MarkupsDelete.png"))
+    deleteObjectTableButton.connect('clicked()', partial(self.removeTrackedObjectFromTable, trackedObject))
+    self.widget.objectsTable.setCellWidget(row, 4, deleteObjectTableButton)
 
 
-  def updateTrackedObjectsTable(self, trackedObject, objectNumber):
+  def updateTrackedObjectInTable(self, trackedObject, objectNumber):
     self.widget.objectsTable.setItem(objectNumber, 1, qt.QTableWidgetItem(trackedObject.found))
     self.widget.objectsTable.setItem(objectNumber, 2, qt.QTableWidgetItem(trackedObject.shape))
+
+
+  def removeTrackedObjectFromTable(self, trackedObject):
+    for row in range(self.widget.objectsTable.rowCount):
+      if str(self.widget.objectsTable.item(row, 0).text()) == trackedObject.name:
+        self.widget.objectsTable.removeRow(row)
+        break
+
+    keys = [key for (key, value) in self.trackedObjectDict.iteritems() if value == trackedObject]
+    del self.trackedObjectDict[keys[0]]
+    self.currentTrackedObjects -= 1
+
+    #for key in self.trackedObjectDict:
+    #  if key > keys[0]
+    #  self.addTrackedObjectToTable(self.trackedObjectDict[key], row)
+
 
 
   def pickColor(self):
     self.widget = slicer.modules.ColourObjectTrackerWidget
     self.webcamImageVolume.RemoveObserver(self.drawBoxObserver)
     
-    trackedObject = TrackedObject(self.getImageColorBoundaries())
-    self.addTrackedObjectToTable(trackedObject)
+    trackedObject = TrackedObject('TrackedObject_' + str(self.numberOfTrackedObjects), self.getImageColorBoundaries())
+    self.addTrackedObjectToTable(trackedObject, self.currentTrackedObjects)
     self.trackedObjectDict[self.numberOfTrackedObjects] = trackedObject
     self.numberOfTrackedObjects += 1
+    self.currentTrackedObjects += 1
 
     self.boundaries = self.getImageColorBoundaries()
 
@@ -344,21 +372,12 @@ class ColourObjectTrackerLogic(ScriptedLoadableModuleLogic):
 
 
 class ColourObjectTrackerTest(ScriptedLoadableModuleTest):
-  """
-  This is the test case for your scripted module.
-  Uses ScriptedLoadableModuleTest base class, available at:
-  https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
-  """
 
   def setUp(self):
-    """ Do whatever is needed to reset the state - typically a scene clear will be enough.
-    """
     slicer.mrmlScene.Clear(0)
 
 
   def runTest(self):
-    """Run as few or as many tests as needed here.
-    """
     self.setUp()
     self.test_ColourObjectTracker1()
 
@@ -369,10 +388,14 @@ class ColourObjectTrackerTest(ScriptedLoadableModuleTest):
 
 class TrackedObject:
 
-  def __init__(self, boundaries):
+  def __init__(self, name, boundaries):
     self.boundaries = boundaries
+    self.name = name
     self.found = 'NO'
     self.shape = 'NONE'
     self.color = (self.boundaries[0][0][0] + 20,
                   self.boundaries[0][0][1] + 20,
                   self.boundaries[0][0][2] + 20)
+
+  def __repr__(self):
+    return str(self.name + ' ' + self.found + ' ' + self.shape + ' ' + str(self.color))
