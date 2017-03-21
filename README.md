@@ -21,7 +21,7 @@ Exact content can be found in the PerkTutorPrivate Assembla space, below are hig
 
 ### TODO:
 
-- Create a method for object selection natively in the module (WIP - [Currently averaging R G B values independently and creating a working racnge around them(https://github.com/zacbaum/CISC472Project/blob/8aed290e9bc956b75a6ba4c52028b3d9e2388038/src/WebcamTracking/WebcamTrackingModules/ColourObjectTracking/ColourObjectTracker.py#L251-L280))
+- Create a method for object selection natively in the module (WIP - [Currently averaging R G B values independently and creating a working range around them](https://github.com/zacbaum/CISC472Project/blob/8aed290e9bc956b75a6ba4c52028b3d9e2388038/src/WebcamTracking/WebcamTrackingModules/ColourObjectTracking/ColourObjectTracker.py#L251-L280))
 - Add checkbox to show contours on object to verify color selection
 
 ## Helpful Links:
